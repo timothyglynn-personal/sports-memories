@@ -1,0 +1,339 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+interface Memory {
+  title: string;
+  team: string;
+  year: number;
+  sport: string;
+  blurb: string;
+  rank: number;
+}
+
+interface Generation {
+  id: string;
+  city: string;
+  decade: string;
+  sports: string[];
+  model: string;
+  results: Memory[];
+  createdAt: string;
+}
+
+const SPORT_COLORS: Record<string, string> = {
+  Rugby: "bg-green-600",
+  Soccer: "bg-emerald-600",
+  Basketball: "bg-orange-500",
+  NFL: "bg-red-700",
+  Baseball: "bg-blue-700",
+  Hockey: "bg-cyan-600",
+  Tennis: "bg-yellow-500",
+  Cricket: "bg-lime-600",
+  Motorsport: "bg-red-500",
+};
+
+export default function ResultsPage() {
+  const [generation, setGeneration] = useState<Generation | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, Set<string>>>({});
+  const [reorderInput, setReorderInput] = useState("");
+  const [reorderSubmitted, setReorderSubmitted] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSent, setFeedbackSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("currentGeneration");
+    if (stored) {
+      setGeneration(JSON.parse(stored));
+    } else {
+      router.push("/");
+    }
+  }, [router]);
+
+  function saveFeedback(
+    type: string,
+    cardIndex?: number,
+    reorder?: string,
+    text?: string
+  ) {
+    if (!generation) return;
+    const fb = {
+      id: crypto.randomUUID(),
+      generationId: generation.id,
+      type,
+      cardIndex,
+      reorderValue: reorder,
+      freeformText: text,
+      createdAt: new Date().toISOString(),
+    };
+    const existing = JSON.parse(localStorage.getItem("feedback") || "[]");
+    existing.push(fb);
+    localStorage.setItem("feedback", JSON.stringify(existing));
+  }
+
+  function handleFlag(type: "not_accurate" | "not_good", index: number) {
+    const key = `${type}-${index}`;
+    setFeedback((prev) => {
+      const next = { ...prev };
+      if (!next[generation!.id]) next[generation!.id] = new Set();
+      next[generation!.id].add(key);
+      return next;
+    });
+    saveFeedback(type, index);
+  }
+
+  function isFlagged(type: string, index: number) {
+    return feedback[generation?.id || ""]?.has(`${type}-${index}`) || false;
+  }
+
+  function handleReorder() {
+    const trimmed = reorderInput.trim();
+    const parts = trimmed.split(",").map((s) => parseInt(s.trim()));
+    if (
+      parts.length === 3 &&
+      parts.every((n) => n >= 1 && n <= 3) &&
+      new Set(parts).size === 3
+    ) {
+      saveFeedback("reorder", undefined, trimmed);
+      setReorderSubmitted(true);
+    }
+  }
+
+  function handleFreeformSubmit() {
+    if (!feedbackText.trim()) return;
+    saveFeedback("freeform", undefined, undefined, feedbackText);
+    setFeedbackSent(true);
+    setTimeout(() => {
+      setShowFeedbackModal(false);
+      setFeedbackSent(false);
+      setFeedbackText("");
+    }, 1500);
+  }
+
+  async function handleRegenerate() {
+    if (!generation) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: generation.city,
+          decade: generation.decade,
+          sports: generation.sports,
+          model: generation.model,
+        }),
+      });
+      const data = await res.json();
+      const newGen: Generation = {
+        id: crypto.randomUUID(),
+        city: generation.city,
+        decade: generation.decade,
+        sports: generation.sports,
+        model: generation.model,
+        results: data.memories,
+        createdAt: new Date().toISOString(),
+      };
+      const existing = JSON.parse(
+        localStorage.getItem("generations") || "[]"
+      );
+      existing.push(newGen);
+      localStorage.setItem("generations", JSON.stringify(existing));
+      localStorage.setItem("currentGeneration", JSON.stringify(newGen));
+      setGeneration(newGen);
+      setReorderInput("");
+      setReorderSubmitted(false);
+    } catch (err) {
+      console.error("Regeneration failed:", err);
+    }
+    setLoading(false);
+  }
+
+  if (!generation) {
+    return (
+      <main className="flex-1 flex items-center justify-center">
+        <p className="text-gray-400">Loading...</p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex-1 flex flex-col items-center px-4 py-8">
+      <div className="w-full max-w-2xl">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">
+              {generation.city} &mdash; {generation.decade}
+            </h1>
+            <p className="text-gray-400 text-sm">
+              Model: {generation.model === "claude" ? "Claude" : "GPT-4"}
+            </p>
+          </div>
+          <Link
+            href="/admin"
+            className="px-4 py-2 rounded-lg bg-navy-light border border-navy-lighter
+                       text-gray-300 text-sm hover:border-gold transition-colors"
+          >
+            Admin
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-20">
+            <p className="text-xl text-gold animate-pulse">
+              Searching the archives...
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-4 mb-8">
+              {generation.results.map((memory, i) => (
+                <div
+                  key={i}
+                  className="animate-slide-in bg-navy-light rounded-xl p-6 border border-navy-lighter"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="text-4xl font-black text-gold">
+                      {memory.rank}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold mb-1">{memory.title}</h3>
+                      <p className="text-gray-400 text-sm mb-2">
+                        {memory.team} &bull; {memory.year}
+                      </p>
+                      <p className="text-gray-300 mb-3">{memory.blurb}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-semibold text-white ${
+                            SPORT_COLORS[memory.sport] || "bg-gray-600"
+                          }`}
+                        >
+                          {memory.sport}
+                        </span>
+                        <button
+                          onClick={() => handleFlag("not_accurate", i)}
+                          disabled={isFlagged("not_accurate", i)}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer
+                            ${
+                              isFlagged("not_accurate", i)
+                                ? "bg-red-700 text-white cursor-not-allowed"
+                                : "bg-navy-lighter text-gray-400 hover:bg-red-900 hover:text-red-200"
+                            }`}
+                        >
+                          Not Accurate
+                        </button>
+                        <button
+                          onClick={() => handleFlag("not_good", i)}
+                          disabled={isFlagged("not_good", i)}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer
+                            ${
+                              isFlagged("not_good", i)
+                                ? "bg-orange-600 text-white cursor-not-allowed"
+                                : "bg-navy-lighter text-gray-400 hover:bg-orange-900 hover:text-orange-200"
+                            }`}
+                        >
+                          Not A Good Example
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-navy-light rounded-xl p-6 border border-navy-lighter mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                How would YOU rank these? (e.g. 2,1,3)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={reorderInput}
+                  onChange={(e) => setReorderInput(e.target.value)}
+                  placeholder="2,1,3"
+                  disabled={reorderSubmitted}
+                  className="flex-1 px-4 py-2 rounded-lg bg-navy border border-navy-lighter
+                             text-white placeholder-gray-500 focus:outline-none focus:border-gold"
+                />
+                <button
+                  onClick={handleReorder}
+                  disabled={reorderSubmitted}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all cursor-pointer
+                    ${
+                      reorderSubmitted
+                        ? "bg-green-700 text-white cursor-not-allowed"
+                        : "bg-blue text-white hover:bg-blue/80"
+                    }`}
+                >
+                  {reorderSubmitted ? "Saved!" : "Submit"}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={handleRegenerate}
+                className="px-6 py-3 rounded-lg bg-gold text-navy font-bold
+                           hover:bg-gold/90 transition-all cursor-pointer"
+              >
+                Give Me Another
+              </button>
+              <button
+                onClick={() => setShowFeedbackModal(true)}
+                className="px-6 py-3 rounded-lg bg-navy-lighter border border-navy-lighter
+                           text-gray-300 font-semibold hover:border-gold transition-all cursor-pointer"
+              >
+                I Need To Give Feedback
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {showFeedbackModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-navy-light rounded-xl p-6 w-full max-w-md border border-navy-lighter">
+            {feedbackSent ? (
+              <p className="text-center text-xl text-gold font-bold">
+                Thank you!
+              </p>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold mb-4">Your Feedback</h2>
+                <textarea
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="Tell us what you think..."
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-lg bg-navy border border-navy-lighter
+                             text-white placeholder-gray-500 focus:outline-none focus:border-gold
+                             resize-none mb-4"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setShowFeedbackModal(false)}
+                    className="px-4 py-2 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleFreeformSubmit}
+                    className="px-4 py-2 rounded-lg bg-gold text-navy font-semibold
+                               hover:bg-gold/90 transition-all cursor-pointer"
+                  >
+                    Submit
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

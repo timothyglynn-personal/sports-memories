@@ -1,65 +1,83 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+const SPORTS = [
+  { name: "Rugby", emoji: "🏉" },
+  { name: "Soccer", emoji: "⚽" },
+  { name: "Basketball", emoji: "🏀" },
+  { name: "NFL", emoji: "🏈" },
+  { name: "Baseball", emoji: "⚾" },
+  { name: "Hockey", emoji: "🏒" },
+  { name: "Tennis", emoji: "🎾" },
+  { name: "Cricket", emoji: "🏏" },
+  { name: "Motorsport", emoji: "🏎️" },
+];
+
+export default function HomePage() {
+  const [selected, setSelected] = useState<string[]>([]);
+  const router = useRouter();
+
+  function toggle(sport: string) {
+    setSelected((prev) =>
+      prev.includes(sport) ? prev.filter((s) => s !== sport) : [...prev, sport]
+    );
+  }
+
+  function handleContinue() {
+    if (selected.length === 0) return;
+    localStorage.setItem("selectedSports", JSON.stringify(selected));
+    router.push("/query");
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="flex-1 flex flex-col items-center justify-center px-4 py-12">
+      <h1 className="text-4xl md:text-5xl font-bold text-center mb-2">
+        What Sports Do You <span className="text-gold">Love</span>?
+      </h1>
+      <p className="text-gray-400 text-lg mb-10 text-center">
+        Select the sports that matter most to your city
+      </p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-xl w-full mb-10">
+        {SPORTS.map((sport) => {
+          const isSelected = selected.includes(sport.name);
+          return (
+            <button
+              key={sport.name}
+              onClick={() => toggle(sport.name)}
+              className={`
+                relative p-6 rounded-xl text-center transition-all duration-200
+                hover:scale-105 hover:shadow-lg cursor-pointer
+                ${
+                  isSelected
+                    ? "bg-navy-lighter border-2 border-gold shadow-[0_0_12px_rgba(212,168,83,0.3)]"
+                    : "bg-navy-light border-2 border-transparent hover:border-blue/50"
+                }
+              `}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+              <div className="text-3xl mb-2">{sport.emoji}</div>
+              <div className="font-semibold text-sm">{sport.name}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={handleContinue}
+        disabled={selected.length === 0}
+        className={`
+          px-8 py-3 rounded-lg font-bold text-lg transition-all duration-200
+          ${
+            selected.length > 0
+              ? "bg-gold text-navy hover:bg-gold/90 cursor-pointer"
+              : "bg-gray-700 text-gray-500 cursor-not-allowed"
+          }
+        `}
+      >
+        Continue ({selected.length} selected)
+      </button>
+    </main>
   );
 }

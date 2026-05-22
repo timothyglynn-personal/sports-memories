@@ -3,7 +3,21 @@ import { NextRequest } from "next/server";
 export async function POST(request: NextRequest) {
   const { city, decade, sports, model } = await request.json();
 
-  const prompt = `You are a sports historian. For the city of ${city} during ${decade}, considering these sports: ${sports.join(", ")}. Generate the top 3 greatest sporting memories. For each, provide: title, team, year, sport, and a 3-sentence nostalgic blurb explaining why this was a legendary moment for the city. Consider: team prominence in that city, cultural impact, emotional significance. Return JSON array of 3 objects with fields: title, team, year, sport, blurb, rank (1-3). Return ONLY valid JSON, no markdown.`;
+  const prompt = `You are a sports historian. Your job is to recall REAL, VERIFIED sporting events only. Never invent or fabricate events.
+
+For the city of "${city}" during the period ${decade}, considering these sports: ${sports.join(", ")}.
+
+Rules:
+- Only include events that ACTUALLY HAPPENED. Real championships, real games, real moments.
+- Identify the MAJOR teams from that city (e.g. Manchester = Manchester United, Manchester City; Chicago = Bulls, Bears, Cubs, White Sox, Blackhawks)
+- Rank by cultural significance to THAT CITY specifically — a World Series win matters more than a regular season record
+- The year MUST fall within the ${decade} range
+- The team MUST actually be based in or represent ${city}
+- Include the real opponent, real score, or real context where possible
+
+Generate the top 3 greatest REAL sporting memories. For each provide: title (the actual event name), team (real team name), year (exact year it happened), sport, and a 3-sentence blurb explaining why this was legendary for the city. Be specific with real player names, real scores, real opponents.
+
+Return JSON array of 3 objects with fields: title, team, year, sport, blurb, rank (1-3). Return ONLY valid JSON, no markdown.`;
 
   try {
     let memories;

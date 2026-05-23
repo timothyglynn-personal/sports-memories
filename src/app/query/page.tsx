@@ -75,6 +75,12 @@ export default function QueryPage() {
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center px-4 py-12">
+      <button
+        onClick={() => router.push("/")}
+        className="mb-6 px-4 py-2 rounded-lg bg-navy-light border border-navy-lighter text-gray-300 text-sm hover:border-gold transition-colors"
+      >
+        ← Change Sports
+      </button>
       <h1 className="text-3xl md:text-4xl font-bold text-center mb-2">
         Ranking Your City&apos;s Greatest{" "}
         <span className="text-gold">Sporting Memories</span>

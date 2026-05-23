@@ -154,8 +154,8 @@ export default function ResultsPage() {
   }
 
   function getImageUrl(memory: Memory) {
-    const query = memory.image_query || `${memory.team} ${memory.sport} ${memory.year}`;
-    return `https://images.unsplash.com/photo-1461896836934-bd45ea8b7d5e?w=400&h=250&fit=crop&q=80`;
+    const query = encodeURIComponent(memory.image_query || `${memory.team} ${memory.sport} stadium`);
+    return `https://source.unsplash.com/600x300/?${query}`;
   }
 
   if (!generation) {

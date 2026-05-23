@@ -46,7 +46,7 @@ Return JSON array of 3 objects with fields: title, team, year, sport, blurb, ima
     const memoriesWithImages = await Promise.all(
       memories.map(async (memory: { title: string; team: string; year: number; sport: string; image_query?: string; [key: string]: unknown }) => {
         const query = memory.image_query || `${memory.title} ${memory.team} ${memory.year}`;
-        const imageUrl = await fetchWikipediaImage(query, memory.team, memory.year);
+        const imageUrl = await fetchEventImage(query);
         return { ...memory, image_url: imageUrl };
       })
     );
@@ -98,30 +98,23 @@ async function generateWithOpenAI(prompt: string, modelId: string) {
   return JSON.parse(text);
 }
 
-async function fetchWikipediaImage(query: string, team: string, year: number): Promise<string | null> {
-  const searches = [
-    `${team} ${year}`,
-    `${query}`,
-    `${team}`,
-  ];
+async function fetchEventImage(query: string): Promise<string | null> {
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) return null;
 
-  for (const search of searches) {
-    try {
-      const url = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(search)}&gsrlimit=3&prop=pageimages&format=json&pithumbsize=600&origin=*`;
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(3000),
-        headers: { "User-Agent": "SportsMemories/1.0 (https://sports-memories.vercel.app)" },
-      });
-      const data = await res.json();
-      const pages = data?.query?.pages;
-      if (pages) {
-        for (const page of Object.values(pages) as { thumbnail?: { source: string } }[]) {
-          if (page?.thumbnail?.source) return page.thumbnail.source;
-        }
-      }
-    } catch {
-      continue;
-    }
+  try {
+    const res = await fetch("https://google.serper.dev/images", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 1 }),
+      signal: AbortSignal.timeout(3000),
+    });
+    const data = await res.json();
+    return data?.images?.[0]?.imageUrl || null;
+  } catch {
+    return null;
   }
-  return null;
 }

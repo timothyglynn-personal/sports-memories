@@ -31,10 +31,10 @@ Return JSON array of 3 objects with fields: title, team, year, sport, blurb, ran
     return Response.json({ memories });
   } catch (error) {
     console.error("Generation error:", error);
-    // Fallback: return mock data so app works without API keys
-    return Response.json({
-      memories: getMockMemories(city, decade, sports),
-    });
+    return Response.json(
+      { error: `AI generation failed: ${error instanceof Error ? error.message : "Unknown error"}` },
+      { status: 500 }
+    );
   }
 }
 
@@ -46,7 +46,7 @@ async function generateWithClaude(prompt: string) {
   const client = new Anthropic({ apiKey });
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 1024,
     messages: [{ role: "user", content: prompt }],
   });
@@ -73,32 +73,3 @@ async function generateWithOpenAI(prompt: string) {
   return JSON.parse(text);
 }
 
-function getMockMemories(city: string, decade: string, sports: string[]) {
-  const sport = sports[0] || "Soccer";
-  return [
-    {
-      rank: 1,
-      title: `${city} Championship Victory`,
-      team: `${city} United`,
-      year: parseInt(decade.split("-")[0]) + 5,
-      sport,
-      blurb: `The crowd erupted as ${city} United clinched the championship in dramatic fashion. It was a moment that united the entire city, from downtown pubs to living rooms across the suburbs. Decades later, fans still talk about where they were that night.`,
-    },
-    {
-      rank: 2,
-      title: `The Miracle Comeback`,
-      team: `${city} Legends`,
-      year: parseInt(decade.split("-")[0]) + 3,
-      sport: sports[1] || sport,
-      blurb: `Down by what seemed an insurmountable margin, ${city} Legends staged the greatest comeback in franchise history. The final play has been replayed millions of times, and the roar of the crowd could be heard blocks away. It redefined what this city believed was possible.`,
-    },
-    {
-      rank: 3,
-      title: `The Dynasty Season`,
-      team: `${city} Royals`,
-      year: parseInt(decade.split("-")[0]) + 8,
-      sport: sports[2] || sport,
-      blurb: `${city} Royals dominated from start to finish, going on a historic winning streak that captivated the nation. Every game felt like an event, with the stadium packed to capacity week after week. This team didn't just win—they inspired a generation of young athletes.`,
-    },
-  ];
-}

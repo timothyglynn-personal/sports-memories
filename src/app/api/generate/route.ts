@@ -15,9 +15,9 @@ Rules:
 - The team MUST actually be based in or represent ${city}
 - Include the real opponent, real score, or real context where possible
 
-Generate the top 3 greatest REAL sporting memories. For each provide: title (the actual event name), team (real team name), year (exact year it happened), sport, and a 3-sentence blurb explaining why this was legendary for the city. Be specific with real player names, real scores, real opponents.
+Generate the top 3 greatest REAL sporting memories. For each provide: title (the actual event name), team (real team name), year (exact year it happened), sport, a 2-sentence blurb explaining why this was legendary for the city (be specific with real player names, scores, opponents), and an image_query (a short search phrase for finding a photo of this event, e.g. "Derek Jeter 2001 World Series home run").
 
-Return JSON array of 3 objects with fields: title, team, year, sport, blurb, rank (1-3). Return ONLY valid JSON, no markdown.`;
+Return JSON array of 3 objects with fields: title, team, year, sport, blurb, image_query, rank (1-3). Return ONLY valid JSON, no markdown.`;
 
   try {
     let memories;
@@ -46,8 +46,8 @@ async function generateWithClaude(prompt: string) {
   const client = new Anthropic({ apiKey });
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 600,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -64,13 +64,12 @@ async function generateWithOpenAI(prompt: string) {
   const client = new OpenAI({ apiKey });
 
   const completion = await client.chat.completions.create({
-    model: "gpt-4",
+    model: "gpt-4o-mini",
     messages: [{ role: "user", content: prompt }],
-    max_tokens: 1024,
+    max_tokens: 600,
   });
 
   let text = completion.choices[0]?.message?.content || "[]";
   text = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
   return JSON.parse(text);
 }
-

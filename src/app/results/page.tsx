@@ -154,8 +154,18 @@ export default function ResultsPage() {
   }
 
   function getImageUrl(memory: Memory) {
-    const query = encodeURIComponent(memory.image_query || `${memory.team} ${memory.sport} stadium`);
-    return `https://source.unsplash.com/600x300/?${query}`;
+    const sportImages: Record<string, string> = {
+      Soccer: "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=600&h=300&fit=crop",
+      Basketball: "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600&h=300&fit=crop",
+      Baseball: "https://images.unsplash.com/photo-1529768167801-9173d94c2a42?w=600&h=300&fit=crop",
+      NFL: "https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=600&h=300&fit=crop",
+      Rugby: "https://images.unsplash.com/photo-1544298621-35a764866ff0?w=600&h=300&fit=crop",
+      Hockey: "https://images.unsplash.com/photo-1580600301354-0ce8faef576c?w=600&h=300&fit=crop",
+      Tennis: "https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=600&h=300&fit=crop",
+      Cricket: "https://images.unsplash.com/photo-1531415074968-036ba1b575da?w=600&h=300&fit=crop",
+      Motorsport: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=600&h=300&fit=crop",
+    };
+    return sportImages[memory.sport] || "https://images.unsplash.com/photo-1461896836934-bd45ea8b7d5e?w=600&h=300&fit=crop";
   }
 
   if (!generation) {

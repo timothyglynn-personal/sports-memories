@@ -53,6 +53,7 @@ export default function ResultsPage() {
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [feedback, setFeedback] = useState<Record<string, Set<string>>>({});
   const [reorderInput, setReorderInput] = useState("");
+  const [reorderReason, setReorderReason] = useState("");
   const [reorderSubmitted, setReorderSubmitted] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
@@ -105,6 +106,9 @@ export default function ResultsPage() {
     const parts = trimmed.split(",").map((s) => parseInt(s.trim()));
     if (parts.length === 3 && parts.every((n) => n >= 1 && n <= 3) && new Set(parts).size === 3) {
       saveFeedback("reorder", undefined, trimmed);
+      if (reorderReason.trim()) {
+        saveFeedback("reorder_reason", undefined, trimmed, reorderReason.trim());
+      }
       setReorderSubmitted(true);
     }
   }
@@ -206,27 +210,26 @@ export default function ResultsPage() {
             <div className="space-y-4 mb-8">
               {generation.results.map((memory, i) => (
                 <div key={i} className="animate-slide-in bg-navy-light rounded-xl overflow-hidden border border-navy-lighter">
-                  {/* Image */}
-                  <div className={`relative h-36 md:h-44 bg-gradient-to-br ${SPORT_FALLBACK_GRADIENT[memory.sport] || "from-gray-800 to-gray-950"}`}>
+                  {/* Full image */}
+                  <div className={`relative bg-gradient-to-br ${SPORT_FALLBACK_GRADIENT[memory.sport] || "from-gray-800 to-gray-950"}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={getImageUrl(memory)}
                       alt={memory.title}
-                      className="absolute inset-0 w-full h-full object-cover opacity-60"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      className="w-full h-auto max-h-[400px] object-contain bg-black/40"
+                      onError={(e) => { (e.target as HTMLImageElement).className = "w-full h-48 object-cover opacity-30"; }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f1b2e] via-transparent to-transparent" />
-                    <div className="absolute bottom-3 left-4 flex items-end gap-3">
-                      <span className="text-4xl font-black text-gold drop-shadow-lg">{memory.rank}</span>
-                      <div>
-                        <h3 className="text-lg md:text-xl font-bold text-white drop-shadow">{memory.title}</h3>
-                        <p className="text-gray-300 text-sm">{memory.team} • {memory.year}</p>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Content */}
                   <div className="p-4">
+                    <div className="flex items-start gap-3 mb-2">
+                      <span className="text-3xl font-black text-gold">{memory.rank}</span>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">{memory.title}</h3>
+                        <p className="text-gray-400 text-sm">{memory.team} • {memory.year}</p>
+                      </div>
+                    </div>
                     <p className="text-gray-300 text-sm mb-3">{memory.blurb}</p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`px-2 py-1 rounded text-xs font-semibold text-white ${SPORT_COLORS[memory.sport] || "bg-gray-600"}`}>
@@ -267,6 +270,15 @@ export default function ResultsPage() {
                   {reorderSubmitted ? "Saved!" : "Submit"}
                 </button>
               </div>
+              <textarea
+                value={reorderReason}
+                onChange={(e) => setReorderReason(e.target.value)}
+                placeholder="Why would you rank them differently? (e.g. 'The 2009 World Series was bigger for NYC than the 2000 one because...')"
+                rows={2}
+                disabled={reorderSubmitted}
+                className="w-full mt-3 px-4 py-2 rounded-lg bg-navy border border-navy-lighter text-white text-sm placeholder-gray-500 focus:outline-none focus:border-gold resize-none disabled:opacity-50"
+              />
+              {reorderSubmitted && <p className="text-xs text-green-400 mt-2">Your ranking feedback has been saved and will help improve future results.</p>}
             </div>
 
             {/* Action buttons */}

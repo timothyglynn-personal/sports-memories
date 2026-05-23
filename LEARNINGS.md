@@ -4,6 +4,27 @@
 
 ---
 
+## 0. The Image Search Journey (Biggest Lesson)
+
+Getting the right images for each memory was the hardest integration problem. Here's what we tried:
+
+| Approach | Result | Why It Failed/Worked |
+|----------|--------|---------------------|
+| Unsplash Source API | Dead links | Service deprecated in 2023, returns nothing |
+| Static Unsplash URLs per sport | Generic stadium photos | Not event-specific, no emotional connection |
+| Wikipedia API (pageimages) | Mostly logos/generic | Wikipedia pages for events often lack thumbnails; team pages return logos not moments |
+| Wikipedia with multi-query fallback | Better but still generic | Gets team images, not iconic event photos |
+| Google Custom Search API | Never worked | Complex setup: need Search Engine ID + API key + "search entire web" toggle that's hidden in the UI |
+| **Serper.dev (Google Images wrapper)** | **Iconic event photos** | **One API key, no other config, returns actual Google Image results** |
+
+**PM Takeaways:**
+* **Free APIs have severe limitations.** Wikipedia's image coverage is inconsistent. Unsplash deprecated their simple URL API. You often need a paid service for production quality.
+* **Setup friction kills momentum.** Google Custom Search requires: a Google Cloud project, an API key, a Programmable Search Engine, enabling image search, enabling "search entire web." Serper.dev requires: sign up, copy key. Same underlying data (Google), 10x less friction.
+* **Images are emotional, not decorative.** Generic stadium photos add nothing. The specific photo of Derek Jeter's walkoff or the Yankees celebrating — THAT conveys the feeling. Don't settle for "an image" when you need "THE image."
+* **Budget for image search costs.** Serper.dev gives 2,500 free searches, then charges ~$50/month. At 3 images per generation, that's ~830 generations free. Plan your image strategy into your cost model.
+
+---
+
 ## 1. Model Selection is a Product Decision
 
 | Model | Provider | Latency | Accuracy | Cost/Request | Best For |
@@ -53,9 +74,12 @@ Our eval criteria for this app:
 | Explicit negative | "Not Accurate" button | Model factually wrong |
 | Explicit quality | "Not A Good Example" button | Technically correct but culturally weak |
 | Ranking preference | User reorders 2,1,3 | Model's prioritization is off |
+| Ranking reason | "The 2009 series mattered more because..." | WHY the model's ranking logic is wrong — most valuable signal |
 | Freeform critique | "Ignored baseball entirely" | Systematic blind spot |
 | Regeneration | "Give Me Another" | Output wasn't satisfying (implicit) |
 | Acceptance | No flags, no reorder | Output was good (implicit) |
+
+**Key insight about ranking reasons:** The reorder alone tells you WHAT was wrong. The reason tells you WHY. "2,1,3" says "your #2 should be #1" but "The 2009 series was bigger because it was the first title in the new stadium" teaches you the CRITERIA the user values. This is the data that actually improves the prompt/model over time.
 
 **Key insight**: The most valuable signal is when users DON'T interact. Silence = approval. But you only know this if you instrument everything.
 

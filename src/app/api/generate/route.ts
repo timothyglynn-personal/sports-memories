@@ -46,7 +46,7 @@ Return JSON array of 3 objects with fields: title, team, year, sport, blurb, ima
     const memoriesWithImages = await Promise.all(
       memories.map(async (memory: { title: string; team: string; year: number; sport: string; image_query?: string; [key: string]: unknown }) => {
         const query = memory.image_query || `${memory.title} ${memory.team} ${memory.year}`;
-        const imageUrl = await fetchWikipediaImage(query);
+        const imageUrl = await fetchWikipediaImage(query, memory.team, memory.year);
         return { ...memory, image_url: imageUrl };
       })
     );
@@ -98,18 +98,30 @@ async function generateWithOpenAI(prompt: string, modelId: string) {
   return JSON.parse(text);
 }
 
-async function fetchWikipediaImage(query: string): Promise<string | null> {
-  try {
-    const url = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=pageimages&format=json&pithumbsize=600&origin=*`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    const data = await res.json();
-    const pages = data?.query?.pages;
-    if (pages) {
-      const page = Object.values(pages)[0] as { thumbnail?: { source: string } };
-      return page?.thumbnail?.source || null;
+async function fetchWikipediaImage(query: string, team: string, year: number): Promise<string | null> {
+  const searches = [
+    `${team} ${year}`,
+    `${query}`,
+    `${team}`,
+  ];
+
+  for (const search of searches) {
+    try {
+      const url = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(search)}&gsrlimit=3&prop=pageimages&format=json&pithumbsize=600&origin=*`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(3000),
+        headers: { "User-Agent": "SportsMemories/1.0 (https://sports-memories.vercel.app)" },
+      });
+      const data = await res.json();
+      const pages = data?.query?.pages;
+      if (pages) {
+        for (const page of Object.values(pages) as { thumbnail?: { source: string } }[]) {
+          if (page?.thumbnail?.source) return page.thumbnail.source;
+        }
+      }
+    } catch {
+      continue;
     }
-    return null;
-  } catch {
-    return null;
   }
+  return null;
 }

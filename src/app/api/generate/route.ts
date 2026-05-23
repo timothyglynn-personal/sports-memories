@@ -42,9 +42,17 @@ Return JSON array of 3 objects with fields: title, team, year, sport, blurb, ima
       memories = await generateWithClaude(prompt, modelConfig.modelId);
     }
 
-    const latencyMs = Date.now() - startTime;
+    // Fetch real images from Wikipedia for each memory
+    const memoriesWithImages = await Promise.all(
+      memories.map(async (memory: { title: string; team: string; year: number; sport: string; image_query?: string; [key: string]: unknown }) => {
+        const query = memory.image_query || `${memory.title} ${memory.team} ${memory.year}`;
+        const imageUrl = await fetchWikipediaImage(query);
+        return { ...memory, image_url: imageUrl };
+      })
+    );
 
-    return Response.json({ memories, meta: { model: modelConfig.modelId, provider: modelConfig.provider, latencyMs } });
+    const latencyMs = Date.now() - startTime;
+    return Response.json({ memories: memoriesWithImages, meta: { model: modelConfig.modelId, provider: modelConfig.provider, latencyMs } });
   } catch (error) {
     console.error("Generation error:", error);
     return Response.json(
@@ -88,4 +96,20 @@ async function generateWithOpenAI(prompt: string, modelId: string) {
   let text = completion.choices[0]?.message?.content || "[]";
   text = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
   return JSON.parse(text);
+}
+
+async function fetchWikipediaImage(query: string): Promise<string | null> {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=pageimages&format=json&pithumbsize=600&origin=*`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    const pages = data?.query?.pages;
+    if (pages) {
+      const page = Object.values(pages)[0] as { thumbnail?: { source: string } };
+      return page?.thumbnail?.source || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

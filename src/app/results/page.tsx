@@ -11,6 +11,7 @@ interface Memory {
   sport: string;
   blurb: string;
   image_query?: string;
+  image_url?: string;
   rank: number;
 }
 
@@ -154,6 +155,8 @@ export default function ResultsPage() {
   }
 
   function getImageUrl(memory: Memory) {
+    if (memory.image_url) return memory.image_url;
+    // Fallback sport-specific images if Wikipedia returned nothing
     const sportImages: Record<string, string> = {
       Soccer: "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=600&h=300&fit=crop",
       Basketball: "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600&h=300&fit=crop",

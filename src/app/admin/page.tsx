@@ -3,22 +3,16 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
-interface Memory {
-  title: string;
-  team: string;
-  year: number;
-  sport: string;
-  blurb: string;
-  rank: number;
-}
-
 interface Generation {
   id: string;
   city: string;
   decade: string;
   sports: string[];
   model: string;
-  results: Memory[];
+  modelId?: string;
+  provider?: string;
+  latencyMs?: number;
+  results: { title: string; team: string; year: number; sport: string; blurb: string; rank: number }[];
   createdAt: string;
 }
 
@@ -32,16 +26,46 @@ interface Feedback {
   createdAt: string;
 }
 
+interface EvalCriteria {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+const DEFAULT_EVALS: EvalCriteria[] = [
+  { id: "city_match", name: "City Relevance", description: "Is the team/event actually from the specified city?", enabled: true },
+  { id: "decade_match", name: "Decade Accuracy", description: "Does the event year fall within the selected decade?", enabled: true },
+  { id: "sport_match", name: "Sport Relevance", description: "Is the event from one of the selected sports?", enabled: true },
+  { id: "factual", name: "Factual Accuracy", description: "Are the scores, opponents, player names, and outcomes real and correct?", enabled: true },
+  { id: "ranking_quality", name: "Ranking Quality", description: "Are events ranked by cultural significance to that city (not just recency)?", enabled: true },
+  { id: "team_prominence", name: "Team Prominence", description: "Does it feature the city's most prominent/beloved teams rather than minor ones?", enabled: true },
+  { id: "emotional_resonance", name: "Emotional Resonance", description: "Would a fan from that city recognize this as a defining memory?", enabled: true },
+  { id: "no_hallucination", name: "No Hallucination", description: "Are all facts verifiable? No invented events, fake scores, or wrong attributions?", enabled: true },
+];
+
 export default function AdminPage() {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [feedbackList, setFeedbackList] = useState<Feedback[]>([]);
+  const [evals, setEvals] = useState<EvalCriteria[]>(DEFAULT_EVALS);
   const [mounted, setMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState<"dashboard" | "evals" | "models">("dashboard");
+  const [editingEval, setEditingEval] = useState<string | null>(null);
+  const [newEvalName, setNewEvalName] = useState("");
+  const [newEvalDesc, setNewEvalDesc] = useState("");
 
   useEffect(() => {
     setGenerations(JSON.parse(localStorage.getItem("generations") || "[]"));
     setFeedbackList(JSON.parse(localStorage.getItem("feedback") || "[]"));
+    const storedEvals = localStorage.getItem("eval_criteria");
+    if (storedEvals) setEvals(JSON.parse(storedEvals));
     setMounted(true);
   }, []);
+
+  function saveEvals(updated: EvalCriteria[]) {
+    setEvals(updated);
+    localStorage.setItem("eval_criteria", JSON.stringify(updated));
+  }
 
   if (!mounted) return <main className="flex-1 flex items-center justify-center"><p className="text-gray-400">Loading...</p></main>;
 
@@ -50,211 +74,266 @@ export default function AdminPage() {
   const notGood = feedbackList.filter((f) => f.type === "not_good").length;
   const reorders = feedbackList.filter((f) => f.type === "reorder");
   const freeformFeedback = feedbackList.filter((f) => f.type === "freeform");
-
   const accuracyRate = totalCards > 0 ? ((totalCards - notAccurate) / totalCards * 100).toFixed(1) : "—";
   const qualityRate = totalCards > 0 ? ((totalCards - notGood) / totalCards * 100).toFixed(1) : "—";
-
   const avgReorderDistance = reorders.length > 0
     ? (reorders.reduce((sum, r) => {
         const parts = r.reorderValue?.split(",").map((s) => parseInt(s.trim())) || [1, 2, 3];
-        const distance = parts.reduce((d, val, idx) => d + Math.abs(val - (idx + 1)), 0);
-        return sum + distance;
+        return sum + parts.reduce((d, val, idx) => d + Math.abs(val - (idx + 1)), 0);
       }, 0) / reorders.length).toFixed(2)
     : "—";
 
-  // Rank position analysis
+  // Model comparison stats
+  const modelStats: Record<string, { generations: number; avgLatency: number; flags: number; cards: number; reorders: number; reorderDist: number }> = {};
+  for (const gen of generations) {
+    const key = gen.modelId || gen.model || "unknown";
+    if (!modelStats[key]) modelStats[key] = { generations: 0, avgLatency: 0, flags: 0, cards: 0, reorders: 0, reorderDist: 0 };
+    modelStats[key].generations++;
+    modelStats[key].avgLatency += gen.latencyMs || 0;
+    modelStats[key].cards += 3;
+    const genFb = feedbackList.filter((f) => f.generationId === gen.id);
+    modelStats[key].flags += genFb.filter((f) => f.type === "not_accurate" || f.type === "not_good").length;
+    const reorder = genFb.find((f) => f.type === "reorder");
+    if (reorder) {
+      modelStats[key].reorders++;
+      const parts = reorder.reorderValue?.split(",").map((s) => parseInt(s.trim())) || [1, 2, 3];
+      modelStats[key].reorderDist += parts.reduce((d, val, idx) => d + Math.abs(val - (idx + 1)), 0);
+    }
+  }
+
+  // Rank acceptance
   const rankAcceptance = [0, 0, 0];
-  const totalReorders = reorders.length;
   for (const r of reorders) {
     const parts = r.reorderValue?.split(",").map((s) => parseInt(s.trim())) || [];
-    if (parts.length === 3) {
-      parts.forEach((val, idx) => { if (val === idx + 1) rankAcceptance[idx]++; });
-    }
+    if (parts.length === 3) parts.forEach((val, idx) => { if (val === idx + 1) rankAcceptance[idx]++; });
   }
 
-  // City breakdown
-  const cityStats: Record<string, { total: number; accurate: number; good: number; reorders: number; reorderDist: number }> = {};
+  // City stats
+  const cityStats: Record<string, { total: number; flags: number }> = {};
   for (const gen of generations) {
-    if (!cityStats[gen.city]) cityStats[gen.city] = { total: 0, accurate: 0, good: 0, reorders: 0, reorderDist: 0 };
+    if (!cityStats[gen.city]) cityStats[gen.city] = { total: 0, flags: 0 };
     cityStats[gen.city].total++;
-    const genFb = feedbackList.filter((f) => f.generationId === gen.id);
-    const genInaccurate = genFb.filter((f) => f.type === "not_accurate").length;
-    const genBad = genFb.filter((f) => f.type === "not_good").length;
-    cityStats[gen.city].accurate += (3 - genInaccurate);
-    cityStats[gen.city].good += (3 - genBad);
-    const genReorder = genFb.find((f) => f.type === "reorder");
-    if (genReorder) {
-      cityStats[gen.city].reorders++;
-      const parts = genReorder.reorderValue?.split(",").map((s) => parseInt(s.trim())) || [1, 2, 3];
-      cityStats[gen.city].reorderDist += parts.reduce((d, val, idx) => d + Math.abs(val - (idx + 1)), 0);
-    }
+    cityStats[gen.city].flags += feedbackList.filter((f) => f.generationId === gen.id && (f.type === "not_accurate" || f.type === "not_good")).length;
   }
-
-  // Most flagged events
-  const eventFlags: Record<string, { title: string; count: number; types: string[] }> = {};
-  for (const fb of feedbackList.filter((f) => f.type === "not_accurate" || f.type === "not_good")) {
-    const gen = generations.find((g) => g.id === fb.generationId);
-    if (gen && fb.cardIndex !== undefined && gen.results[fb.cardIndex]) {
-      const event = gen.results[fb.cardIndex];
-      const key = `${event.title}-${event.team}-${event.year}`;
-      if (!eventFlags[key]) eventFlags[key] = { title: `${event.title} (${event.team}, ${event.year})`, count: 0, types: [] };
-      eventFlags[key].count++;
-      eventFlags[key].types.push(fb.type);
-    }
-  }
-  const flaggedEvents = Object.values(eventFlags).sort((a, b) => b.count - a.count).slice(0, 10);
 
   return (
     <main className="flex-1 px-4 py-6 md:py-8">
       <div className="max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Eval Dashboard</h1>
-            <p className="text-gray-400 text-sm mt-1">Monitor ranking accuracy and quality over time</p>
+            <p className="text-gray-400 text-sm mt-1">Monitor, compare, and configure evaluations</p>
           </div>
-          <Link href="/query" className="px-4 py-2 rounded-lg bg-gold text-navy font-semibold text-sm hover:bg-gold/90 transition-colors">
-            ← Generate
-          </Link>
+          <Link href="/query" className="px-4 py-2 rounded-lg bg-gold text-navy font-semibold text-sm hover:bg-gold/90 transition-colors">← Generate</Link>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
-          <StatCard label="Generations" value={String(generations.length)} />
-          <StatCard label="Accuracy" value={`${accuracyRate}%`} sub={`${notAccurate} flags / ${totalCards} cards`} color={Number(accuracyRate) > 80 ? "text-green-400" : "text-red-400"} />
-          <StatCard label="Quality" value={`${qualityRate}%`} sub={`${notGood} flags / ${totalCards} cards`} color={Number(qualityRate) > 80 ? "text-green-400" : "text-orange-400"} />
-          <StatCard label="Avg Reorder" value={avgReorderDistance} sub={`${reorders.length} reorders`} color={Number(avgReorderDistance) < 2 ? "text-green-400" : "text-yellow-400"} />
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 bg-navy-light rounded-lg p-1 border border-navy-lighter">
+          {(["dashboard", "models", "evals"] as const).map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${activeTab === tab ? "bg-gold text-navy" : "text-gray-400 hover:text-white"}`}>
+              {tab === "dashboard" ? "Performance" : tab === "models" ? "Model Comparison" : "Eval Criteria"}
+            </button>
+          ))}
         </div>
 
-        {/* Ranking Accuracy */}
-        <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-2">Ranking Accuracy</h2>
-          <p className="text-gray-400 text-sm mb-4">How often does the user agree with each rank position?</p>
-          {totalReorders === 0 ? (
-            <p className="text-gray-500 text-sm italic">No reorder data yet.</p>
-          ) : (
-            <div className="grid grid-cols-3 gap-4">
-              {[1, 2, 3].map((pos) => {
-                const pct = ((rankAcceptance[pos - 1] / totalReorders) * 100).toFixed(0);
-                return (
-                  <div key={pos} className="text-center">
-                    <div className="text-3xl font-bold text-gold mb-1">{pct}%</div>
-                    <div className="text-sm text-gray-400">Rank #{pos} correct</div>
-                    <div className="mt-2 h-2 bg-navy rounded-full overflow-hidden">
-                      <div className="h-full bg-gold rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
+        {/* TAB: Dashboard */}
+        {activeTab === "dashboard" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatCard label="Generations" value={String(generations.length)} />
+              <StatCard label="Accuracy" value={`${accuracyRate}%`} sub={`${notAccurate} flags`} color={Number(accuracyRate) > 80 ? "text-green-400" : "text-red-400"} />
+              <StatCard label="Quality" value={`${qualityRate}%`} sub={`${notGood} flags`} color={Number(qualityRate) > 80 ? "text-green-400" : "text-orange-400"} />
+              <StatCard label="Avg Reorder" value={avgReorderDistance} sub={`${reorders.length} submitted`} color={Number(avgReorderDistance) < 2 ? "text-green-400" : "text-yellow-400"} />
             </div>
-          )}
-        </section>
 
-        {/* Performance by City */}
-        <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Performance by City</h2>
-          {Object.keys(cityStats).length === 0 ? (
-            <p className="text-gray-500 text-sm italic">No data yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-400 border-b border-navy-lighter">
-                    <th className="text-left py-2 pr-4">City</th>
-                    <th className="text-right py-2 px-2">Gens</th>
-                    <th className="text-right py-2 px-2">Accuracy</th>
-                    <th className="text-right py-2 px-2">Quality</th>
-                    <th className="text-right py-2 pl-2">Avg Reorder</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(cityStats).sort((a, b) => b[1].total - a[1].total).map(([city, stats]) => {
-                    const cityCards = stats.total * 3;
-                    const acc = ((stats.accurate / cityCards) * 100).toFixed(0);
-                    const qual = ((stats.good / cityCards) * 100).toFixed(0);
-                    const avgR = stats.reorders > 0 ? (stats.reorderDist / stats.reorders).toFixed(1) : "—";
+            {/* Rank accuracy */}
+            <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">Ranking Accuracy</h2>
+              {reorders.length === 0 ? <p className="text-gray-500 text-sm italic">No reorder data yet.</p> : (
+                <div className="grid grid-cols-3 gap-4">
+                  {[1, 2, 3].map((pos) => {
+                    const pct = ((rankAcceptance[pos - 1] / reorders.length) * 100).toFixed(0);
                     return (
-                      <tr key={city} className="border-b border-navy-lighter/50">
-                        <td className="py-2 pr-4 font-medium">{city}</td>
-                        <td className="text-right py-2 px-2 text-gray-400">{stats.total}</td>
-                        <td className={`text-right py-2 px-2 ${Number(acc) > 80 ? "text-green-400" : "text-red-400"}`}>{acc}%</td>
-                        <td className={`text-right py-2 px-2 ${Number(qual) > 80 ? "text-green-400" : "text-orange-400"}`}>{qual}%</td>
-                        <td className="text-right py-2 pl-2 text-gray-400">{avgR}</td>
-                      </tr>
+                      <div key={pos} className="text-center">
+                        <div className="text-3xl font-bold text-gold">{pct}%</div>
+                        <div className="text-xs text-gray-400">Rank #{pos} correct</div>
+                        <div className="mt-2 h-2 bg-navy rounded-full overflow-hidden"><div className="h-full bg-gold rounded-full" style={{ width: `${pct}%` }} /></div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                </div>
+              )}
+            </section>
 
-        {/* Most Flagged Events */}
-        <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Most Flagged Events</h2>
-          {flaggedEvents.length === 0 ? (
-            <p className="text-gray-500 text-sm italic">No flags yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {flaggedEvents.map((event, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-navy-lighter/50 last:border-0">
-                  <span className="text-sm">{event.title}</span>
-                  <div className="flex gap-2">
-                    <span className="text-xs text-red-400">{event.types.filter((t) => t === "not_accurate").length} inaccurate</span>
-                    <span className="text-xs text-orange-400">{event.types.filter((t) => t === "not_good").length} poor</span>
-                  </div>
+            {/* City breakdown */}
+            <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">Performance by City</h2>
+              {Object.keys(cityStats).length === 0 ? <p className="text-gray-500 text-sm italic">No data yet.</p> : (
+                <div className="space-y-2">
+                  {Object.entries(cityStats).sort((a, b) => b[1].total - a[1].total).slice(0, 10).map(([city, s]) => (
+                    <div key={city} className="flex items-center justify-between py-1.5 border-b border-navy-lighter/50 last:border-0 text-sm">
+                      <span className="font-medium">{city}</span>
+                      <div className="flex gap-4 text-xs">
+                        <span className="text-gray-400">{s.total} gens</span>
+                        <span className={s.flags === 0 ? "text-green-400" : "text-red-400"}>{s.flags} flags</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Recent feedback */}
+            <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">Recent Feedback</h2>
+              {freeformFeedback.length === 0 ? <p className="text-gray-500 text-sm italic">No freeform feedback yet.</p> : (
+                <div className="space-y-2">
+                  {freeformFeedback.slice(-8).reverse().map((fb) => {
+                    const gen = generations.find((g) => g.id === fb.generationId);
+                    return (
+                      <div key={fb.id} className="bg-navy rounded-lg p-3 border border-navy-lighter/30">
+                        <p className="text-sm text-gray-300">&ldquo;{fb.freeformText}&rdquo;</p>
+                        <p className="text-xs text-gray-500 mt-1">{gen ? `${gen.city}, ${gen.decade}` : ""} — {new Date(fb.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* TAB: Model Comparison */}
+        {activeTab === "models" && (
+          <div className="space-y-6">
+            <p className="text-gray-400 text-sm">Compare accuracy, latency, and quality across different AI models.</p>
+            {Object.keys(modelStats).length === 0 ? (
+              <div className="bg-navy-light rounded-xl border border-navy-lighter p-8 text-center">
+                <p className="text-gray-500">No data yet. Generate memories with different models to see comparisons.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-navy-lighter">
+                      <th className="text-left py-3 pr-4">Model</th>
+                      <th className="text-right py-3 px-3">Runs</th>
+                      <th className="text-right py-3 px-3">Avg Latency</th>
+                      <th className="text-right py-3 px-3">Accuracy</th>
+                      <th className="text-right py-3 px-3">Avg Reorder</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(modelStats).sort((a, b) => b[1].generations - a[1].generations).map(([modelName, stats]) => {
+                      const acc = ((stats.cards - stats.flags) / stats.cards * 100).toFixed(0);
+                      const avgLat = stats.generations > 0 ? Math.round(stats.avgLatency / stats.generations) : 0;
+                      const avgR = stats.reorders > 0 ? (stats.reorderDist / stats.reorders).toFixed(1) : "—";
+                      return (
+                        <tr key={modelName} className="border-b border-navy-lighter/50">
+                          <td className="py-3 pr-4">
+                            <span className="font-medium">{modelName}</span>
+                          </td>
+                          <td className="text-right py-3 px-3 text-gray-400">{stats.generations}</td>
+                          <td className="text-right py-3 px-3">
+                            {avgLat > 0 ? (
+                              <span className={avgLat < 2000 ? "text-green-400" : avgLat < 5000 ? "text-yellow-400" : "text-red-400"}>
+                                {(avgLat / 1000).toFixed(1)}s
+                              </span>
+                            ) : <span className="text-gray-500">—</span>}
+                          </td>
+                          <td className={`text-right py-3 px-3 ${Number(acc) > 80 ? "text-green-400" : "text-red-400"}`}>{acc}%</td>
+                          <td className="text-right py-3 px-3 text-gray-400">{avgR}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <h3 className="text-sm font-semibold mb-3 text-gold">PM Insight: Model Tradeoffs</h3>
+              <div className="space-y-2 text-xs text-gray-400">
+                <p><strong className="text-gray-300">Latency vs Quality:</strong> Faster models (Haiku, GPT-4o Mini) respond in 1-2s but may miss nuance. Premium models (Opus, GPT-4o) take 5-10s but rank better.</p>
+                <p><strong className="text-gray-300">Cost scaling:</strong> Haiku costs ~$0.001/request, Opus ~$0.05/request. At scale, this 50x difference matters for product margins.</p>
+                <p><strong className="text-gray-300">Hallucination patterns:</strong> Faster models hallucinate more on niche sports/cities. Premium models are more honest about uncertainty.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: Eval Criteria */}
+        {activeTab === "evals" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <p className="text-gray-400 text-sm">Define what &ldquo;good&rdquo; means. These criteria determine how you evaluate the agent&apos;s outputs.</p>
+            </div>
+
+            <div className="space-y-3">
+              {evals.map((ev) => (
+                <div key={ev.id} className={`bg-navy-light rounded-xl border p-4 transition-colors ${ev.enabled ? "border-navy-lighter" : "border-navy-lighter/30 opacity-60"}`}>
+                  {editingEval === ev.id ? (
+                    <div className="space-y-2">
+                      <input type="text" value={ev.name} onChange={(e) => saveEvals(evals.map((x) => x.id === ev.id ? { ...x, name: e.target.value } : x))}
+                        className="w-full bg-navy border border-navy-lighter rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-gold" />
+                      <textarea value={ev.description} onChange={(e) => saveEvals(evals.map((x) => x.id === ev.id ? { ...x, description: e.target.value } : x))} rows={2}
+                        className="w-full bg-navy border border-navy-lighter rounded px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-gold resize-none" />
+                      <button onClick={() => setEditingEval(null)} className="text-xs text-gold">Done</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${ev.enabled ? "bg-green-400" : "bg-gray-600"}`} />
+                          <h3 className="text-sm font-medium">{ev.name}</h3>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1 ml-4">{ev.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setEditingEval(ev.id)} className="text-xs text-gray-400 hover:text-white">Edit</button>
+                        <button onClick={() => saveEvals(evals.map((x) => x.id === ev.id ? { ...x, enabled: !x.enabled } : x))}
+                          className={`text-xs ${ev.enabled ? "text-orange-400" : "text-green-400"}`}>
+                          {ev.enabled ? "Disable" : "Enable"}
+                        </button>
+                        <button onClick={() => saveEvals(evals.filter((x) => x.id !== ev.id))} className="text-xs text-red-400">Remove</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-          )}
-        </section>
 
-        {/* Recent Feedback */}
-        <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Recent Feedback</h2>
-          {freeformFeedback.length === 0 ? (
-            <p className="text-gray-500 text-sm italic">No freeform feedback yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {freeformFeedback.slice(-10).reverse().map((fb) => {
-                const gen = generations.find((g) => g.id === fb.generationId);
-                return (
-                  <div key={fb.id} className="bg-navy rounded-lg p-3 border border-navy-lighter/30">
-                    <p className="text-sm text-gray-300 mb-1">&ldquo;{fb.freeformText}&rdquo;</p>
-                    <p className="text-xs text-gray-500">{gen ? `${gen.city}, ${gen.decade}` : "Unknown"} — {new Date(fb.createdAt).toLocaleDateString()}</p>
-                  </div>
-                );
-              })}
+            {/* Add new eval */}
+            <div className="bg-navy-light rounded-xl border border-navy-lighter p-4">
+              <h3 className="text-sm font-semibold mb-3">Add New Eval Criterion</h3>
+              <div className="space-y-2">
+                <input type="text" value={newEvalName} onChange={(e) => setNewEvalName(e.target.value)} placeholder="Criterion name (e.g. 'Recency Bias')"
+                  className="w-full bg-navy border border-navy-lighter rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gold" />
+                <input type="text" value={newEvalDesc} onChange={(e) => setNewEvalDesc(e.target.value)} placeholder="Description (e.g. 'Does it over-weight recent events vs historic ones?')"
+                  className="w-full bg-navy border border-navy-lighter rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gold" />
+                <button onClick={() => {
+                  if (newEvalName.trim()) {
+                    saveEvals([...evals, { id: crypto.randomUUID(), name: newEvalName.trim(), description: newEvalDesc.trim(), enabled: true }]);
+                    setNewEvalName("");
+                    setNewEvalDesc("");
+                  }
+                }} className="px-4 py-2 bg-gold text-navy rounded text-sm font-semibold hover:bg-gold/90">Add Criterion</button>
+              </div>
             </div>
-          )}
-        </section>
 
-        {/* Recent Generations */}
-        <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
-          <h2 className="text-lg font-semibold mb-4">Recent Generations</h2>
-          {generations.length === 0 ? (
-            <p className="text-gray-500 text-sm italic">No generations yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {generations.slice(-15).reverse().map((gen) => {
-                const genFb = feedbackList.filter((f) => f.generationId === gen.id);
-                const flags = genFb.filter((f) => f.type === "not_accurate" || f.type === "not_good").length;
-                return (
-                  <div key={gen.id} className="flex items-center justify-between py-2 border-b border-navy-lighter/50 last:border-0 text-sm">
-                    <div>
-                      <span className="font-medium">{gen.city}</span>
-                      <span className="text-gray-400 ml-2">{gen.decade}</span>
-                      <span className="text-gray-500 ml-2 text-xs">{gen.model}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {flags > 0 && <span className="text-xs text-red-400">{flags} flags</span>}
-                      <span className="text-xs text-gray-500">{new Date(gen.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="bg-navy rounded-xl border border-navy-lighter/30 p-4">
+              <h3 className="text-sm font-semibold mb-2 text-gold">PM Insight: What Makes a Good Eval?</h3>
+              <div className="space-y-1 text-xs text-gray-400">
+                <p>* <strong className="text-gray-300">Measurable:</strong> Can a human clearly judge pass/fail? Avoid vague criteria.</p>
+                <p>* <strong className="text-gray-300">Independent:</strong> Each eval should test one thing. Don&apos;t combine &ldquo;accurate AND well-ranked&rdquo;.</p>
+                <p>* <strong className="text-gray-300">Weighted:</strong> Not all evals matter equally. Factual accuracy &gt; emotional resonance for trust.</p>
+                <p>* <strong className="text-gray-300">Evolving:</strong> Add evals as you discover new failure modes. Remove ones that always pass.</p>
+              </div>
             </div>
-          )}
-        </section>
+          </div>
+        )}
       </div>
     </main>
   );

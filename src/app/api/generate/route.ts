@@ -1,5 +1,16 @@
 import { NextRequest } from "next/server";
 
+const MODEL_MAP: Record<string, { provider: "anthropic" | "openai"; modelId: string }> = {
+  haiku: { provider: "anthropic", modelId: "claude-haiku-4-5-20251001" },
+  sonnet: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+  opus: { provider: "anthropic", modelId: "claude-opus-4-7" },
+  "gpt4o-mini": { provider: "openai", modelId: "gpt-4o-mini" },
+  gpt4o: { provider: "openai", modelId: "gpt-4o" },
+  // Legacy support
+  claude: { provider: "anthropic", modelId: "claude-haiku-4-5-20251001" },
+  gpt4: { provider: "openai", modelId: "gpt-4o-mini" },
+};
+
 export async function POST(request: NextRequest) {
   const { city, decade, sports, model } = await request.json();
 
@@ -19,16 +30,21 @@ Generate the top 3 greatest REAL sporting memories. For each provide: title (the
 
 Return JSON array of 3 objects with fields: title, team, year, sport, blurb, image_query, rank (1-3). Return ONLY valid JSON, no markdown.`;
 
+  const modelConfig = MODEL_MAP[model] || MODEL_MAP.haiku;
+  const startTime = Date.now();
+
   try {
     let memories;
 
-    if (model === "gpt4") {
-      memories = await generateWithOpenAI(prompt);
+    if (modelConfig.provider === "openai") {
+      memories = await generateWithOpenAI(prompt, modelConfig.modelId);
     } else {
-      memories = await generateWithClaude(prompt);
+      memories = await generateWithClaude(prompt, modelConfig.modelId);
     }
 
-    return Response.json({ memories });
+    const latencyMs = Date.now() - startTime;
+
+    return Response.json({ memories, meta: { model: modelConfig.modelId, provider: modelConfig.provider, latencyMs } });
   } catch (error) {
     console.error("Generation error:", error);
     return Response.json(
@@ -38,7 +54,7 @@ Return JSON array of 3 objects with fields: title, team, year, sport, blurb, ima
   }
 }
 
-async function generateWithClaude(prompt: string) {
+async function generateWithClaude(prompt: string, modelId: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("No ANTHROPIC_API_KEY");
 
@@ -46,7 +62,7 @@ async function generateWithClaude(prompt: string) {
   const client = new Anthropic({ apiKey });
 
   const message = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: modelId,
     max_tokens: 600,
     messages: [{ role: "user", content: prompt }],
   });
@@ -56,7 +72,7 @@ async function generateWithClaude(prompt: string) {
   return JSON.parse(text);
 }
 
-async function generateWithOpenAI(prompt: string) {
+async function generateWithOpenAI(prompt: string, modelId: string) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("No OPENAI_API_KEY");
 
@@ -64,7 +80,7 @@ async function generateWithOpenAI(prompt: string) {
   const client = new OpenAI({ apiKey });
 
   const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: modelId,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 600,
   });

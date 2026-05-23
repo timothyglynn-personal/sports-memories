@@ -42,6 +42,12 @@ export default function QueryPage() {
 
       const data = await res.json();
 
+      if (!res.ok || !data.memories) {
+        alert(data.error || "Failed to generate memories. Try again.");
+        setLoading(false);
+        return;
+      }
+
       const generation = {
         id: crypto.randomUUID(),
         city,
@@ -62,6 +68,7 @@ export default function QueryPage() {
       router.push("/results");
     } catch (err) {
       console.error("Generation failed:", err);
+      alert("Network error — check your connection and try again.");
       setLoading(false);
     }
   }

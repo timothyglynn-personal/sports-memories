@@ -51,8 +51,8 @@ async function generateWithClaude(prompt: string) {
     messages: [{ role: "user", content: prompt }],
   });
 
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "";
+  let text = message.content[0].type === "text" ? message.content[0].text : "";
+  text = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
   return JSON.parse(text);
 }
 
@@ -69,7 +69,8 @@ async function generateWithOpenAI(prompt: string) {
     max_tokens: 1024,
   });
 
-  const text = completion.choices[0]?.message?.content || "[]";
+  let text = completion.choices[0]?.message?.content || "[]";
+  text = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
   return JSON.parse(text);
 }
 

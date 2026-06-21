@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { EVAL_DATASET_VERSION, formatEvalGuardrailsForPrompt } from "@/lib/eval-guidance";
 
 const MODEL_MAP: Record<string, { provider: "anthropic" | "openai"; modelId: string }> = {
   haiku: { provider: "anthropic", modelId: "claude-haiku-4-5-20251001" },
@@ -16,14 +17,19 @@ export async function POST(request: NextRequest) {
 
   const prompt = `You are a sports historian. Your job is to recall REAL, VERIFIED sporting events only. Never invent or fabricate events.
 
+This product has an eval dataset (${EVAL_DATASET_VERSION}) covering hallucinated teams/events, wrong sport, wrong decade, wrong images, painful losses, weak ranking, and city/national-team scope errors. Apply these eval-derived guardrails:
+${formatEvalGuardrailsForPrompt()}
+
 For the city of "${city}" during the period ${decade}, considering these sports: ${sports.join(", ")}.
 
 Rules:
 - Only include events that ACTUALLY HAPPENED. Real championships, real games, real moments.
 - Identify the MAJOR teams from that city (e.g. Manchester = Manchester United, Manchester City; Chicago = Bulls, Bears, Cubs, White Sox, Blackhawks)
 - Rank by cultural significance to THAT CITY specifically — a World Series win matters more than a regular season record
+- Prefer beloved wins, titles, comeback victories, first championships, drought-ending wins, and dynasty-defining moments. Do not treat painful losses as "greatest memories" unless the user explicitly asks for them.
 - The year MUST fall within the ${decade} range
 - The team MUST actually be based in or represent ${city}
+- The sport MUST be one of the selected sports: ${sports.join(", ")}
 - Include the real opponent, real score, or real context where possible
 
 Generate the top 3 greatest REAL sporting memories. For each provide: title (the actual event name), team (real team name), year (exact year it happened), sport, a 2-sentence blurb explaining why this was legendary for the city (be specific with real player names, scores, opponents), and an image_query (a short search phrase for finding a photo of this event, e.g. "Derek Jeter 2001 World Series home run").

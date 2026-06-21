@@ -64,12 +64,14 @@ export default function QueryPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const stored = localStorage.getItem("selectedSports");
-    if (stored) {
-      setSports(JSON.parse(stored));
-    } else {
-      router.push("/");
-    }
+    queueMicrotask(() => {
+      const stored = localStorage.getItem("selectedSports");
+      if (stored) {
+        setSports(JSON.parse(stored));
+      } else {
+        router.push("/");
+      }
+    });
   }, [router]);
 
   async function handleGenerate() {

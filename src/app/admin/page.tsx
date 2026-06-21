@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { EVAL_DATASET_SUMMARY, EVAL_DATASET_VERSION, EVAL_EXAMPLES, EVAL_GUARDRAILS } from "@/lib/eval-guidance";
 
 interface Generation {
   id: string;
@@ -49,17 +50,19 @@ export default function AdminPage() {
   const [feedbackList, setFeedbackList] = useState<Feedback[]>([]);
   const [evals, setEvals] = useState<EvalCriteria[]>(DEFAULT_EVALS);
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "evals" | "models">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "models" | "training" | "evals">("dashboard");
   const [editingEval, setEditingEval] = useState<string | null>(null);
   const [newEvalName, setNewEvalName] = useState("");
   const [newEvalDesc, setNewEvalDesc] = useState("");
 
   useEffect(() => {
-    setGenerations(JSON.parse(localStorage.getItem("generations") || "[]"));
-    setFeedbackList(JSON.parse(localStorage.getItem("feedback") || "[]"));
-    const storedEvals = localStorage.getItem("eval_criteria");
-    if (storedEvals) setEvals(JSON.parse(storedEvals));
-    setMounted(true);
+    queueMicrotask(() => {
+      setGenerations(JSON.parse(localStorage.getItem("generations") || "[]"));
+      setFeedbackList(JSON.parse(localStorage.getItem("feedback") || "[]"));
+      const storedEvals = localStorage.getItem("eval_criteria");
+      if (storedEvals) setEvals(JSON.parse(storedEvals));
+      setMounted(true);
+    });
   }, []);
 
   function saveEvals(updated: EvalCriteria[]) {
@@ -130,10 +133,10 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-navy-light rounded-lg p-1 border border-navy-lighter">
-          {(["dashboard", "models", "evals"] as const).map((tab) => (
+          {(["dashboard", "models", "training", "evals"] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${activeTab === tab ? "bg-gold text-navy" : "text-gray-400 hover:text-white"}`}>
-              {tab === "dashboard" ? "Performance" : tab === "models" ? "Model Comparison" : "Eval Criteria"}
+              {tab === "dashboard" ? "Performance" : tab === "models" ? "Model Comparison" : tab === "training" ? "Eval Dataset" : "Eval Criteria"}
             </button>
           ))}
         </div>
@@ -261,6 +264,70 @@ export default function AdminPage() {
                 <p><strong className="text-gray-300">Hallucination patterns:</strong> Faster models hallucinate more on niche sports/cities. Premium models are more honest about uncertainty.</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB: Eval Dataset */}
+        {activeTab === "training" && (
+          <div className="space-y-6">
+            <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold">Eval-Informed Guidance</h2>
+                  <p className="text-gray-400 text-sm mt-1">
+                    The generation prompt now includes guardrails derived from {EVAL_DATASET_VERSION}.
+                  </p>
+                </div>
+                <Link href="/evals/sports_memories_eval_dataset_v2.tsv" className="text-sm text-gold hover:text-gold/80">
+                  Download TSV
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                <StatCard label="Eval Rows" value={String(EVAL_DATASET_SUMMARY.totalRows)} />
+                <StatCard label="Pass Anchors" value={String(EVAL_DATASET_SUMMARY.passRows)} color="text-green-400" />
+                <StatCard label="Fail Cases" value={String(EVAL_DATASET_SUMMARY.failRows)} color="text-red-400" />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {EVAL_DATASET_SUMMARY.categories.map((category) => (
+                  <span key={category} className="px-2 py-1 rounded bg-navy border border-navy-lighter text-xs text-gray-300">
+                    {category}
+                  </span>
+                ))}
+              </div>
+            </section>
+
+            <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">Runtime Guardrails</h2>
+              <div className="space-y-2">
+                {EVAL_GUARDRAILS.map((guardrail, index) => (
+                  <div key={guardrail} className="flex gap-3 text-sm text-gray-300">
+                    <span className="text-gold font-semibold">{index + 1}</span>
+                    <p>{guardrail}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="bg-navy-light rounded-xl border border-navy-lighter p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">Example Eval Cases</h2>
+              <div className="space-y-3">
+                {EVAL_EXAMPLES.map((example) => (
+                  <div key={example.caseId} className="bg-navy rounded-lg p-3 border border-navy-lighter/40">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-gray-500 font-mono">{example.caseId}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold ${example.type === "pass" ? "bg-green-900 text-green-200" : "bg-red-900 text-red-200"}`}>
+                        {example.type}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-300"><span className="text-gray-500">Input:</span> {example.input}</p>
+                    <p className="text-sm text-gray-300"><span className="text-gray-500">Output:</span> {example.output}</p>
+                    <p className="text-xs text-gray-400 mt-2">{example.lesson}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         )}
 

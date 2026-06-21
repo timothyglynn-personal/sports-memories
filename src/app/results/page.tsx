@@ -62,12 +62,14 @@ export default function ResultsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const stored = localStorage.getItem("currentGeneration");
-    if (stored) {
-      setGeneration(JSON.parse(stored));
-    } else {
-      router.push("/");
-    }
+    queueMicrotask(() => {
+      const stored = localStorage.getItem("currentGeneration");
+      if (stored) {
+        setGeneration(JSON.parse(stored));
+      } else {
+        router.push("/");
+      }
+    });
   }, [router]);
 
   function saveFeedback(type: string, cardIndex?: number, reorder?: string, text?: string) {
